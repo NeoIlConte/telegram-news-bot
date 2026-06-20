@@ -1,77 +1,231 @@
 from openai import OpenAI
 import requests
 import os
+from datetime import datetime
+
+# =========================
+# CONFIG
+# =========================
 
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 chat_id = os.environ["TELEGRAM_CHAT_ID"]
-token = os.environ["TELEGRAM_TOKEN"]
+telegram_token = os.environ["TELEGRAM_TOKEN"]
 news_key = os.environ["NEWS_API_KEY"]
 
+MAX_TELEGRAM_LENGTH = 3900
+
+# =========================
+# TELEGRAM
+# =========================
+
 def send(msg):
+    if not msg:
+        return
+
+    if len(msg) > MAX_TELEGRAM_LENGTH:
+        msg = msg[:MAX_TELEGRAM_LENGTH] + "\n\n...[troncato]"
+
     requests.post(
-        f"https://api.telegram.org/bot{token}/sendMessage",
+        f"https://api.telegram.org/bot{telegram_token}/sendMessage",
         json={
             "chat_id": chat_id,
-            "text": msg[:4000]
-        }
+            "text": msg
+        },
+        timeout=30
     )
 
-# NEWS INTERNAZIONALI
-url = (
-    f"https://newsapi.org/v2/top-headlines?"
-    f"language=en&pageSize=10&apiKey={news_key}"
+# =========================
+# NEWS API
+# =========================
+
+def get_news(url):
+    try:
+        response = requests.get(url, timeout=30)
+        data = response.json()
+
+        if data.get("status") != "ok":
+            return []
+
+        return data.get("articles", [])
+
+    except Exception as e:
+        print(f"Errore NewsAPI: {e}")
+        return []
+
+# =========================
+# GPT
+# =========================
+
+def ask_gpt(prompt):
+
+    response = client.responses.create(
+        model="gpt-5-mini",
+        input=prompt
+    )
+
+    return response.output_text
+
+# =========================
+# HEADER
+# =========================
+
+today = datetime.now().strftime("%d/%m/%Y")
+
+# ==================================================
+# 1. RASSEGNA INTERNAZIONALE
+# ==================================================
+
+world_url = (
+    "https://newsapi.org/v2/top-headlines?"
+    f"language=en&pageSize=20&apiKey={news_key}"
 )
 
-articles = requests.get(url).json()["articles"]
+world_articles = get_news(world_url)
 
-news_text = ""
+world_text = ""
 
-for a in articles[:10]:
-    news_text += f"""
-Titolo: {a.get('title')}
-Fonte: {a.get('source', {}).get('name')}
-Descrizione: {a.get('description')}
+for a in world_articles[:15]:
+
+    title = a.get("title", "")
+    source = a.get("source", {}).get("name", "")
+    desc = a.get("description", "")
+
+    world_text += f"""
+Titolo: {title}
+Fonte: {source}
+Descrizione: {desc}
+
 """
 
-prompt1 = f"""
-Agisci come il caporedattore di una testata economica internazionale.
+prompt_world = f"""
+Agisci come caporedattore internazionale.
 
-Analizza queste notizie e seleziona le 5 più importanti.
+Data: {today}
 
-Per ciascuna fornisci:
+Analizza le notizie seguenti.
+
+Seleziona le 5 più importanti.
+
+Per ciascuna indica:
+
+- Titolo
+- Sintesi (massimo 3 righe)
+- Perché è importante
+
+Concludi con:
+
+"Implicazioni per Europa e Italia"
+
+NOTIZIE:
+
+{world_text}
+"""
+
+world_report = ask_gpt(prompt_world)
+
+send(
+    f"🌍 RASSEGNA INTERNAZIONALE - {today}\n\n"
+    f"{world_report}"
+)
+
+# ==================================================
+# 2. TECH & CYBER
+# ==================================================
+
+tech_url = (
+    "https://newsapi.org/v2/everything?"
+    "q=(AI OR cybersecurity OR cloud OR Cisco OR Microsoft "
+    "OR AWS OR Palo Alto OR CrowdStrike OR Google Cloud)"
+    "&language=en"
+    "&sortBy=publishedAt"
+    "&pageSize=30"
+    f"&apiKey={news_key}"
+)
+
+tech_articles = get_news(tech_url)
+
+tech_text = ""
+
+for a in tech_articles[:20]:
+
+    title = a.get("title", "")
+    source = a.get("source", {}).get("name", "")
+    desc = a.get("description", "")
+
+    tech_text += f"""
+Titolo: {title}
+Fonte: {source}
+Descrizione: {desc}
+
+"""
+
+prompt_tech = f"""
+Agisci come ICT Strategy Advisor.
+
+Pubblico:
+Account Manager VEM Sistemi.
+
+Analizza le notizie.
+
+Produci:
+
+🚀 TOP NEWS TECH
+
+Per ogni news:
 - titolo
-- sintesi (3 righe)
-- perché è importante
+- sintesi
+- impatto per CIO/CISO
 
-Notizie:
+🛡 CYBER ALERT
 
-{news_text}
+Evidenzia:
+- vulnerabilità
+- incidenti
+- ransomware
+- nuove minacce
+
+☁ CLOUD & AI
+
+Riassumi trend rilevanti.
+
+📌 OPPORTUNITÀ COMMERCIALI
+
+Indica:
+- opportunità VEM
+- possibili follow-up commerciali
+
+NOTIZIE:
+
+{tech_text}
 """
 
-r1 = client.responses.create(
-    model="gpt-5-mini",
-    input=prompt1
+tech_report = ask_gpt(prompt_tech)
+
+send(
+    f"🚀 TECH & CYBER - {today}\n\n"
+    f"{tech_report}"
 )
 
-send("🌍 Rassegna Internazionale\n\n" + r1.output_text)
+# ==================================================
+# 3. ACCOUNT INTELLIGENCE
+# ==================================================
 
-# TECH
-prompt2 = """
-Agisci come analista ICT.
+account_prompt = f"""
+Agisci come Account Intelligence Analyst.
 
-Riporta le principali novità delle ultime 24 ore su:
+Data: {today}
 
-- AI
-- Cybersecurity
-- Cloud
-- Cisco
-- Microsoft
-- AWS
-- Palo Alto
-- CrowdStrike
+Prepara un briefing executive.
 
-Inoltre evidenzia eventuali notizie pubbliche relative a:
+Concentrati su:
+
+CLIENTI E TARGET:
+- Mediobanca
+- Tesya
+- Alayan
+
+SYSTEM INTEGRATOR:
 - VEM Sistemi
 - Lutech
 - Var Group
@@ -79,12 +233,33 @@ Inoltre evidenzia eventuali notizie pubbliche relative a:
 - Engineering
 - Almaviva
 
-Formato executive per Account Manager.
+Per ciascuna organizzazione evidenzia SOLO se rilevante:
+
+- acquisizioni
+- partnership
+- investimenti
+- cybersecurity
+- cloud
+- AI
+- data center
+- nomine CIO/CISO
+- trasformazione digitale
+
+Se non emergono elementi significativi,
+scrivi "Nessuna evidenza rilevante".
+
+Concludi con:
+
+🎯 PRIORITÀ COMMERCIALI DEL GIORNO
+
+(max 5 punti)
 """
 
-r2 = client.responses.create(
-    model="gpt-5-mini",
-    input=prompt2
+account_report = ask_gpt(account_prompt)
+
+send(
+    f"📈 ACCOUNT INTELLIGENCE - {today}\n\n"
+    f"{account_report}"
 )
 
-send("🚀 Tech & System Integrator\n\n" + r2.output_text)
+print("Messaggi inviati correttamente.")
