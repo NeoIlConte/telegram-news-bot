@@ -221,17 +221,20 @@ Prepara un briefing executive.
 Concentrati su:
 
 CLIENTI E TARGET:
+- Barilla
+- Unipol
+- Crif
+- Esselunga
 - Mediobanca
 - Tesya
-- Alayan
 
 SYSTEM INTEGRATOR:
 - VEM Sistemi
 - Lutech
 - Var Group
 - Maticmind
-- Engineering
-- Almaviva
+- Project
+- Longwave
 
 Per ciascuna organizzazione evidenzia SOLO se rilevante:
 
@@ -263,3 +266,60 @@ send(
 )
 
 print("Messaggi inviati correttamente.")
+
+def get_company_news(company):
+    url = (
+        "https://newsapi.org/v2/everything?"
+        f"q=\"{company}\""
+        "&sortBy=publishedAt"
+        "&pageSize=5"
+        f"&apiKey={news_key}"
+    )
+
+    return get_news(url)
+companies = [
+    "Mediobanca",
+    "Tesya",
+    "Barilla",
+    "Unipol",
+    "Crif",
+    "Esselunga",
+    "VEM Sistemi",
+    "Lutech",
+    "Var Group",
+    "Maticmind",
+    "Project",
+    "Longwave"
+]
+
+company_text = ""
+
+for company in companies:
+
+    articles = get_company_news(company)
+
+    for a in articles[:3]:
+
+        company_text += f"""
+Azienda: {company}
+Titolo: {a.get('title')}
+Fonte: {a.get('source', {}).get('name')}
+Descrizione: {a.get('description')}
+"""
+prompt_account = f"""
+Agisci come Account Intelligence Analyst per VEM Sistemi.
+
+Analizza queste notizie.
+
+Per ogni azienda indica:
+
+- novità rilevanti
+- possibili opportunità commerciali
+- potenziali iniziative cloud
+- potenziali iniziative cybersecurity
+- segnali di investimenti IT
+
+NOTIZIE:
+
+{company_text}
+"""
